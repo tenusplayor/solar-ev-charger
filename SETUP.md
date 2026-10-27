@@ -1,95 +1,55 @@
-# Setup guide
+# Cloud setup
 
-You need **Home Assistant OS** (or a Supervised install). Add-ons aren't available on
-Home Assistant Container or Core installs. Check under **Settings → About**.
+The service runs in Docker on a small Linux server and talks to:
+- **Teslemetry** for Powerwall solar production and battery %
+- **Hyundai Bluelink** for the Ioniq's plugged-in, charging and battery state, and for start/stop
 
-## 1. Car (Ioniq)
+It doesn't need anything at home.
 
-1. **Set the AC charge limit to 80%.** Use the car's EV settings screen (charging
-   settings / target battery level) or the Hyundai app. The car then stops at 80% on
-   its own. The add-on also stops at 80% as a backup, but it sees the battery level
-   late.
-2. **Turn off scheduled charging** (and any off-peak-only charging) in the car or the
-   Hyundai app. Otherwise the car may ignore start commands outside its schedule.
-3. Make sure Bluelink is active and that you know your Hyundai account email,
-   password and PIN.
+## 1. Teslemetry
 
-## 2. Home Assistant integrations
+1. Sign up at [teslemetry.com](https://teslemetry.com) and link your Tesla account, the
+   one your Powerwall is on.
+2. Accept the Tesla Fleet API permissions for the energy site. Teslemetry walks you
+   through this.
+3. Create an API key in the Teslemetry dashboard and keep it for `.env`.
 
-### Powerwall
+## 2. Find your energy site ID
 
-**Powerwall 2:** go to **Settings → Devices & services → Add integration → Tesla
-Powerwall**.
+```sh
+TESLEMETRY_API_KEY=your_key python3 app/powerwall.py
+```
 
-- **IP address:** the Gateway's IP address, from your router (often detected automatically).
-- **Password:** the last 5 characters of the password printed inside the Backup
-  Gateway. If there isn't one, use the last 5 characters of the Gateway serial
-  number from the Tesla app.
+It prints one line per energy site. Copy the ID into `ENERGY_SITE_ID`.
 
-**Powerwall 3:** Home Assistant's Powerwall integration only partly supports
-Powerwall 3. If solar power or charge % are missing, use the **Tesla Fleet**
-integration (built in, requires a Tesla developer account) or **Teslemetry** (a paid
-service with easier setup) instead, and point the add-on at their solar power and
-battery % sensors.
+## 3. Server
 
-You need two sensors: **solar power** and **Powerwall charge %**.
+Any Linux VPS with Docker works: about 1 GB RAM, around $5/month. Install Docker
+(`curl -fsSL https://get.docker.com | sh`), then copy this folder onto it.
 
-### Wall Connector
+## 4. Configure and start
 
-**Settings → Devices & services → Add integration → Tesla Wall Connector**, then
-enter its IP address from your router. This needs a Gen 3 Wall Connector on Wi-Fi.
+```sh
+cp .env.example .env     # fill in the keys and Bluelink login
+docker compose up -d --build
+docker compose logs -f   # watch the decisions
+```
 
-You need two entities: **power** and **vehicle connected**.
+`data/status.json` holds the latest decision and readings.
 
-### Hyundai Bluelink
+## 5. Pause or resume
 
-1. Install [HACS](https://hacs.xyz/) if you don't have it.
-2. **HACS → search "Kia Uvo" → Download**, then restart Home Assistant.
-3. **Settings → Devices & services → Add integration → Kia Uvo**, then choose
-   **Hyundai**, region **USA**, and enter your email, password and PIN.
-4. Leave the update intervals at their defaults. Asking the car for data more often
-   drains its 12 V battery.
+- **Pause:** `touch data/pause`. The service stops sending commands and keeps watching.
+- **Resume:** `rm data/pause`.
 
-You need one entity: **EV battery level**.
+## Things to check first
 
-### Override switch (optional)
-
-**Settings → Devices & services → Helpers → Create helper → Toggle**, named
-something like "EV charger override". While it's on, the add-on leaves charging
-alone. Use it when you want to charge fully overnight.
-
-## 3. Find your entity IDs
-
-Go to **Settings → Devices & services → Entities** and search for each of these.
-Copy the entity ID (for example `sensor.powerwall_solar_power`).
-
-| Add-on option | What to look for |
-|---|---|
-| `solar_power_entity` | Powerwall "Solar power" (kW) |
-| `powerwall_soc_entity` | Powerwall "Charge" (%) |
-| `charger_power_entity` | Wall Connector "Power" |
-| `plugged_in_entity` | Wall Connector "Vehicle connected" |
-| `car_soc_entity` | Ioniq "EV battery level" |
-| `override_entity` | Your toggle, e.g. `input_boolean.ev_charger_override` |
-
-Check the metering once: start charging and watch the Wall Connector power rise.
-If it stays at 0, the add-on can't tell when the car is charging.
-
-## 4. Install the add-on
-
-**From GitHub:** go to **Settings → Add-ons → Add-on Store → ⋮ → Repositories** and
-add this repository's URL. Newer versions may call add-ons "Apps". Then install
-**Solar EV Charger**.
-
-**Without GitHub:** install the **Samba share** or **Advanced SSH & Web Terminal**
-add-on and copy the `solar_ev_charger` folder into the `addons` share. Then go to
-**Add-on Store → ⋮ → Check for updates**, and it appears under **Local add-ons**.
-
-## 5. Configure and start
-
-1. On the add-on's **Configuration** tab, paste in your entity IDs. The defaults are
-   already: Powerwall > 35%, solar > 8 kW, stop at 80%.
-2. **Start** the add-on and turn on **Start on boot**.
-3. Open the **Log** tab. Within a minute you should see a line such as
-   `will start if this lasts: Powerwall at 62% (> 40%)`.
-4. Add `sensor.solar_ev_charger` to a dashboard to see what it's doing.
+- **Bluelink one-time codes.** Hyundai may email a verification code the first time you
+  log in from a new location, such as a server. The service then stops with an
+  `AuthenticationOTPRequired` error in the logs. Log in once from the server's
+  environment to handle that before relying on it.
+- **Car data lag.** Bluelink's view of the car is cached and can lag by 30 minutes or more.
+  The service asks the car for fresh data after each command, but it still reacts more
+  slowly than the old Home Assistant version would have.
+- **Cost.** Teslemetry starts at about $2.50/month base, plus any per-vehicle fee. Check
+  the [pricing page](https://teslemetry.com/pricing) because numbers change.

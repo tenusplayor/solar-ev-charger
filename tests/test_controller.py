@@ -9,9 +9,9 @@ MIN = timedelta(minutes=1)
 def snap(solar=0, pw=20, car=0, plugged=True, car_soc=50, override=False):
     return Snapshot(
         solar_w=solar,
-        car_power_w=car,
         powerwall_soc=pw,
         plugged_in=plugged,
+        charging=car > 0,
         car_soc=car_soc,
         override=override,
     )

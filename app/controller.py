@@ -1,7 +1,7 @@
-"""Charging decisions, independent of Home Assistant.
+"""Charging decisions, independent of any data source or API.
 
-The car can only be started and stopped (US Bluelink has no current control and a
-Tesla Wall Connector is not remotely controllable). The car should charge while
+The Ioniq can only be started and stopped through Bluelink (US Bluelink has no current
+control). The car should charge while
 
     Powerwall charge > powerwall_soc_threshold   OR   solar production > solar_threshold_w
 
@@ -22,8 +22,6 @@ from datetime import date, datetime, timedelta
 START = "start"
 STOP = "stop"
 
-# Wall Connector power above this means the car is actually drawing current.
-CHARGING_THRESHOLD_W = 500
 # Start attempts per "should charge" period before assuming the car is full.
 MAX_START_ATTEMPTS = 2
 
@@ -45,15 +43,11 @@ class Settings:
 @dataclass
 class Snapshot:
     solar_w: float
-    car_power_w: float  # from the Wall Connector
     powerwall_soc: float
     plugged_in: bool
-    car_soc: float | None = None  # Bluelink data is cached and may be missing
+    charging: bool  # as reported by Bluelink, which is cached and can lag by ~30 minutes
+    car_soc: float | None = None
     override: bool = False  # user has taken manual control
-
-    @property
-    def charging(self) -> bool:
-        return self.car_power_w > CHARGING_THRESHOLD_W
 
 
 @dataclass

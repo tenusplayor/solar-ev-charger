@@ -1,0 +1,1 @@
+hyundai-kia-connect-api==4.41.4
