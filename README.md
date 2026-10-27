@@ -3,7 +3,8 @@
 A Home Assistant add-on that charges a Hyundai Ioniq when your Powerwall or solar can cover it,
 using a Tesla Powerwall, a Tesla Wall Connector and Hyundai Bluelink.
 
-See [solar_ev_charger/DOCS.md](solar_ev_charger/DOCS.md) for how it works and how
+See [SETUP.md](SETUP.md) for step-by-step setup, and
+[solar_ev_charger/DOCS.md](solar_ev_charger/DOCS.md) for how it works and how
 to configure it.
 
 ## Install

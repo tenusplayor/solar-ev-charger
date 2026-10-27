@@ -20,8 +20,11 @@ Without that margin, the car would flip on and off as the Powerwall moved betwee
 35% and 36%.
 
 Two limits based on the car's battery apply on top of the rule. Below `car_min_soc`
-(20%) the car always charges, and at `car_target_soc` it stops. The default target
-is 100%, which leaves the stopping point to the charge limit you set in the car.
+(20%) the car always charges, and at `car_target_soc` (80%) it stops.
+
+Also set the car's own AC charge limit to 80%. Bluelink only refreshes the car's
+battery level every 30 minutes or so, so the add-on may notice 80% late. The car's
+own limit stops it exactly on time.
 
 ## Leaving the car plugged in
 
@@ -63,7 +66,7 @@ full speed while it's on.
 | `start_delay_minutes` / `stop_delay_minutes` | 10 / 5 | How long a condition must hold before starting or stopping |
 | `min_minutes_between_commands` | 15 | Shortest time between Bluelink commands |
 | `max_commands_per_day` | 12 | Daily cap on Bluelink commands |
-| `car_target_soc` / `car_min_soc` | 100 / 20 | Stop at the target; below the minimum, always charge |
+| `car_target_soc` / `car_min_soc` | 80 / 20 | Stop at the target; below the minimum, always charge |
 
 ## Status sensor
 

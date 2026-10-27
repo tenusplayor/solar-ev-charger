@@ -24,7 +24,7 @@ options:
   stop_delay_minutes: 5
   min_minutes_between_commands: 15
   max_commands_per_day: 12
-  car_target_soc: 100
+  car_target_soc: 80
   car_min_soc: 20
   poll_seconds: 30
   debug: false

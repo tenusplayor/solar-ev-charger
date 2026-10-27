@@ -38,7 +38,7 @@ class Settings:
     stop_delay: timedelta = timedelta(minutes=5)
     min_command_interval: timedelta = timedelta(minutes=15)
     max_commands_per_day: int = 12
-    car_target_soc: float = 100.0
+    car_target_soc: float = 80.0
     car_min_soc: float = 20.0
 
 
