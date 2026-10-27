@@ -15,16 +15,18 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 def load_env(path: Path) -> None:
-    """Read KEY=VALUE lines from .env into os.environ, without overriding real variables."""
+    """Read KEY=VALUE lines from .env into os.environ. Empty shell variables don't count as set."""
     if not path.exists():
         sys.exit(f"No .env file found at {path}. Copy .env.example to .env and fill it in.")
+    print(f"Reading settings from {path}")
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
         value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key.strip(), value)
+        if not os.environ.get(key.strip()):
+            os.environ[key.strip()] = value
 
 
 def require(name: str) -> str:
