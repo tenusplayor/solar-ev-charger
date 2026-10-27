@@ -1,0 +1,10 @@
+services:
+  solar-ev-charger:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STATUS_FILE: /data/status.json
+      PAUSE_FILE: /data/pause
+    volumes:
+      - ./data:/data
