@@ -25,7 +25,8 @@ class Powerwall:
     def _get(self, path: str):
         req = urllib.request.Request(
             f"{BASE_URL}{path}",
-            headers={"Authorization": f"Bearer {self.api_key}"},
+            # Teslemetry rejects urllib's default User-Agent with 403.
+            headers={"Authorization": f"Bearer {self.api_key}", "User-Agent": "solar-ev-charger/0.1"},
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return json.load(resp)["response"]
