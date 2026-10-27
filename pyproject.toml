@@ -1,0 +1,8 @@
+[project]
+name = "solar-ev-charger"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["solar_ev_charger/app"]
+testpaths = ["tests"]

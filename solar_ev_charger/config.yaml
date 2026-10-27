@@ -1,0 +1,52 @@
+name: Solar EV Charger
+version: "0.1.0"
+slug: solar_ev_charger
+description: Charge a Hyundai Ioniq only from Powerwall solar surplus
+url: https://github.com/OWNER/solar-ev-charger
+arch:
+  - aarch64
+  - amd64
+init: false
+homeassistant_api: true
+options:
+  mode: solar
+  solar_power_entity: sensor.powerwall_solar_power
+  load_power_entity: sensor.powerwall_load_power
+  powerwall_soc_entity: sensor.powerwall_charge
+  charger_power_entity: sensor.tesla_wall_connector_power
+  plugged_in_entity: binary_sensor.tesla_wall_connector_vehicle_connected
+  car_soc_entity: sensor.ioniq_5_ev_battery_level
+  override_entity: ""
+  vehicle_device_id: ""
+  charge_power_w: 7200
+  allowed_shortfall_w: 500
+  start_delay_minutes: 10
+  stop_delay_minutes: 5
+  min_minutes_between_commands: 15
+  max_commands_per_day: 12
+  powerwall_min_soc: 90
+  car_target_soc: 80
+  car_min_soc: 20
+  poll_seconds: 30
+  debug: false
+schema:
+  mode: list(solar|off)
+  solar_power_entity: str
+  load_power_entity: str
+  powerwall_soc_entity: str
+  charger_power_entity: str
+  plugged_in_entity: str
+  car_soc_entity: str
+  override_entity: str?
+  vehicle_device_id: str?
+  charge_power_w: int(1000,20000)
+  allowed_shortfall_w: int(0,10000)
+  start_delay_minutes: int(1,120)
+  stop_delay_minutes: int(1,120)
+  min_minutes_between_commands: int(1,240)
+  max_commands_per_day: int(1,100)
+  powerwall_min_soc: int(0,100)
+  car_target_soc: int(10,100)
+  car_min_soc: int(0,100)
+  poll_seconds: int(10,600)
+  debug: bool
