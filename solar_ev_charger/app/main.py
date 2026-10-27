@@ -20,13 +20,13 @@ log = logging.getLogger("solar_ev_charger")
 def load_settings(opts: dict) -> Settings:
     return Settings(
         mode=opts["mode"],
-        charge_power_w=opts["charge_power_w"],
-        allowed_shortfall_w=opts["allowed_shortfall_w"],
+        powerwall_soc_threshold=opts["powerwall_soc_threshold"],
+        powerwall_resume_margin=opts["powerwall_resume_margin"],
+        solar_threshold_w=opts["solar_threshold_kw"] * 1000,
         start_delay=timedelta(minutes=opts["start_delay_minutes"]),
         stop_delay=timedelta(minutes=opts["stop_delay_minutes"]),
         min_command_interval=timedelta(minutes=opts["min_minutes_between_commands"]),
         max_commands_per_day=opts["max_commands_per_day"],
-        powerwall_min_soc=opts["powerwall_min_soc"],
         car_target_soc=opts["car_target_soc"],
         car_min_soc=opts["car_min_soc"],
     )
@@ -40,7 +40,6 @@ def read_snapshot(ha: HomeAssistant, opts: dict) -> Snapshot:
     override = bool(opts.get("override_entity")) and ha.is_on(opts["override_entity"])
     return Snapshot(
         solar_w=ha.power_w(opts["solar_power_entity"]),
-        load_w=ha.power_w(opts["load_power_entity"]),
         car_power_w=ha.power_w(opts["charger_power_entity"]),
         powerwall_soc=ha.number(opts["powerwall_soc_entity"]),
         plugged_in=ha.is_on(opts["plugged_in_entity"]),
@@ -59,7 +58,7 @@ def main() -> None:
     ha = HomeAssistant()
     controller = Controller(load_settings(opts))
     service_data = {"device_id": opts["vehicle_device_id"]} if opts.get("vehicle_device_id") else {}
-    last_reason = None
+    last_want = None
 
     log.info("Started in %s mode", opts["mode"])
     while True:
@@ -71,22 +70,23 @@ def main() -> None:
             if decision.action:
                 service = "start_charge" if decision.action == START else "stop_charge"
                 log.info("%s charging: %s", decision.action.capitalize(), decision.reason)
-                controller.command_sent(now)  # count attempts too; Bluelink throttles them
+                controller.command_sent(now, decision.action)  # count attempts; Bluelink throttles them
                 ha.call_service("kia_uvo", service, service_data)
-            elif decision.reason != last_reason:
+            elif decision.should_charge != last_want:
                 log.info(decision.reason)
-            last_reason = decision.reason
+            else:
+                log.debug(decision.reason)
+            last_want = decision.should_charge
 
             ha.set_state(
                 STATUS_ENTITY,
                 decision.reason[:255],
                 {
                     "friendly_name": "Solar EV charger",
-                    "surplus_w": round(decision.surplus_w),
-                    "avg_surplus_w": decision.avg_surplus_w and round(decision.avg_surplus_w),
-                    "avg_shortfall_w": decision.avg_shortfall_w and round(decision.avg_shortfall_w),
+                    "should_charge": decision.should_charge,
+                    "solar_w": round(snap.solar_w),
+                    "powerwall_soc": snap.powerwall_soc,
                     "car_power_w": round(snap.car_power_w),
-                    "charge_power_w": round(controller.charge_power_w),
                     "commands_today": controller.commands_today,
                     "last_action": decision.action,
                 },

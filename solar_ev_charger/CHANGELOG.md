@@ -2,4 +2,4 @@
 
 ## 0.1.0
 
-- First release: starts and stops Ioniq charging from Powerwall solar surplus.
+- First release: charges the Ioniq while the Powerwall is above 35% or solar is above 8 kW.

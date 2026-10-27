@@ -6,11 +6,9 @@ T0 = datetime(2026, 6, 1, 10, 0)
 MIN = timedelta(minutes=1)
 
 
-def snap(solar=9000, house=1000, car=0, pw=100, plugged=True, car_soc=50, override=False):
-    """Build a snapshot from house load excluding the car, like the Powerwall sees it."""
+def snap(solar=0, pw=20, car=0, plugged=True, car_soc=50, override=False):
     return Snapshot(
         solar_w=solar,
-        load_w=house + car,
         car_power_w=car,
         powerwall_soc=pw,
         plugged_in=plugged,
@@ -20,106 +18,122 @@ def snap(solar=9000, house=1000, car=0, pw=100, plugged=True, car_soc=50, overri
 
 
 def run(ctrl, minutes, start=T0, **kw):
-    """Feed one sample per minute and return the last decision."""
+    """Feed one reading per minute and return the last decision."""
     decision = None
     for i in range(minutes + 1):
         decision = ctrl.decide(start + i * MIN, snap(**kw))
     return decision
 
 
-def test_surplus_excludes_car_load():
-    s = snap(solar=9000, house=1000, car=7000)
-    assert s.surplus_w == 8000
-    assert s.charging
-
-
-def test_starts_after_sustained_surplus():
+def test_starts_when_solar_above_threshold():
     ctrl = Controller(Settings())
-    assert run(ctrl, 5).action is None  # not enough history yet
-    assert run(ctrl, 10).action == START
+    assert run(ctrl, 5, solar=9000).action is None  # must last start_delay first
+    assert run(ctrl, 10, start=T0 + 6 * MIN, solar=9000).action == START
 
 
-def test_does_not_start_when_surplus_too_small():
-    ctrl = Controller(Settings(charge_power_w=7200, allowed_shortfall_w=500))
-    d = run(ctrl, 15, solar=7000, house=1000)  # 6000 W surplus < 6700 W needed
-    assert d.action is None
-    assert "need 6700" in d.reason
-
-
-def test_brief_cloud_does_not_block_start():
+def test_starts_when_powerwall_above_threshold():
     ctrl = Controller(Settings())
-    for i in range(11):
-        solar = 3000 if i == 5 else 9500
-        d = ctrl.decide(T0 + i * MIN, snap(solar=solar))
-    assert d.action == START
+    assert run(ctrl, 10, pw=60).action == START
 
 
-def test_waits_for_powerwall_to_fill():
-    ctrl = Controller(Settings(powerwall_min_soc=90))
-    d = run(ctrl, 15, pw=70)
-    assert d.action is None
-    assert "Powerwall at 70%" in d.reason
+def test_does_nothing_when_neither_condition_holds():
+    d = run(Controller(Settings()), 30, solar=7000, pw=30)
+    assert d.action is None and not d.should_charge
+    assert "needs > 40%" in d.reason and "needs > 8.0 kW" in d.reason
 
 
-def test_stops_when_pulling_from_battery():
+def test_stops_when_neither_condition_holds():
     ctrl = Controller(Settings())
-    # Charging at 7 kW but only 4 kW of solar surplus: 3 kW comes from the Powerwall.
-    d = run(ctrl, 10, solar=5000, house=1000, car=7000)
-    assert d.action == STOP
-    assert "3000 W" in d.reason
+    # Evening: solar gone and the car has drained the Powerwall to 35%.
+    assert run(ctrl, 4, solar=500, pw=35, car=7000).action is None  # wait stop_delay
+    assert run(ctrl, 5, start=T0 + 5 * MIN, solar=500, pw=35, car=7000).action == STOP
 
 
-def test_keeps_charging_on_small_shortfall():
-    ctrl = Controller(Settings(allowed_shortfall_w=500))
-    d = run(ctrl, 10, solar=7700, house=1000, car=7000)  # 300 W shortfall
-    assert d.action is None
-    assert d.reason == "charging on solar"
+def test_keeps_charging_while_either_condition_holds():
+    ctrl = Controller(Settings())
+    assert run(ctrl, 30, solar=9000, pw=20, car=7000).action is None
+    assert run(ctrl, 30, start=T0 + 31 * MIN, solar=0, pw=36, car=7000).action is None
 
 
-def test_stops_at_target_soc():
-    ctrl = Controller(Settings(car_target_soc=80))
-    d = ctrl.decide(T0, snap(car=7000, car_soc=80))
-    assert d.action == STOP
+def test_powerwall_needs_margin_to_restart():
+    ctrl = Controller(Settings(powerwall_soc_threshold=35, powerwall_resume_margin=5))
+    assert run(ctrl, 15, pw=38).action is None  # stopped at 35%, not back above 40%
+    assert run(ctrl, 15, start=T0 + 16 * MIN, pw=41).action == START
 
 
-def test_charges_from_any_source_below_min_soc():
+def test_brief_cloud_does_not_stop_charging():
+    ctrl = Controller(Settings())
+    for i in range(30):
+        solar = 2000 if 10 <= i < 13 else 9000  # 3-minute dip, stop_delay is 5
+        d = ctrl.decide(T0 + i * MIN, snap(solar=solar, car=7000))
+        assert d.action is None
+
+
+def test_full_car_is_not_woken_repeatedly():
+    ctrl = Controller(Settings(min_command_interval=timedelta(minutes=15)))
+    sent = 0
+    for i in range(8 * 60):  # sunny all day, car never draws power
+        d = ctrl.decide(T0 + i * MIN, snap(solar=9000))
+        if d.action:
+            ctrl.command_sent(T0 + i * MIN, d.action)
+            sent += 1
+    assert sent == 2
+    assert "probably full" in d.reason
+
+
+def test_does_not_restart_after_car_stops_itself():
+    ctrl = Controller(Settings())
+    run(ctrl, 20, solar=9000, car=7000)  # charging
+    d = run(ctrl, 30, start=T0 + 21 * MIN, solar=9000, car=0)  # car hit its own limit
+    assert d.action is None and "probably full" in d.reason
+
+
+def test_new_attempt_after_conditions_reset():
+    ctrl = Controller(Settings())
+    run(ctrl, 20, solar=9000, car=7000)
+    run(ctrl, 600, start=T0 + 21 * MIN, solar=0, pw=20)  # overnight
+    tomorrow = T0 + timedelta(days=1)
+    assert run(ctrl, 10, start=tomorrow, solar=9000).action == START
+
+
+def test_replug_resets_attempts():
+    ctrl = Controller(Settings())
+    run(ctrl, 20, solar=9000, car=7000)
+    run(ctrl, 2, start=T0 + 21 * MIN, plugged=False)
+    assert run(ctrl, 10, start=T0 + 24 * MIN, solar=9000).action == START
+
+
+def test_target_and_min_soc():
+    ctrl = Controller(Settings(car_target_soc=80, car_min_soc=20))
+    assert run(ctrl, 10, solar=9000, car=7000, car_soc=80).action == STOP
     ctrl = Controller(Settings(car_min_soc=20))
-    assert ctrl.decide(T0, snap(solar=0, car_soc=10)).action == START
-    d = run(ctrl, 10, start=T0 + 20 * MIN, solar=0, car=7000, car_soc=15)
-    assert d.action is None
+    assert run(ctrl, 10, solar=0, pw=10, car_soc=15).action == START
 
 
 def test_unknown_car_soc_still_works():
-    ctrl = Controller(Settings())
-    assert run(ctrl, 10, car_soc=None).action == START
+    assert run(Controller(Settings()), 10, solar=9000, car_soc=None).action == START
 
 
-def test_override_and_off_and_unplugged_do_nothing():
-    assert run(Controller(Settings()), 10, override=True).reason == "manual override on"
-    assert run(Controller(Settings(mode="off")), 10).reason == "mode is off"
-    assert run(Controller(Settings()), 10, plugged=False).reason == "not plugged in"
+def test_override_off_and_unplugged_do_nothing():
+    assert run(Controller(Settings()), 10, solar=9000, override=True).reason == "manual override on"
+    assert run(Controller(Settings(mode="off")), 10, solar=9000).reason == "mode is off"
+    assert run(Controller(Settings()), 10, solar=9000, plugged=False).reason == "not plugged in"
 
 
-def test_rate_limits_between_commands():
+def test_rate_limited_between_commands():
     ctrl = Controller(Settings(min_command_interval=timedelta(minutes=15)))
-    assert run(ctrl, 10).action == START
-    ctrl.command_sent(T0 + 10 * MIN)
-    # Car never started drawing; a retry must wait out the interval.
-    d = ctrl.decide(T0 + 11 * MIN, snap())
+    assert run(ctrl, 10, solar=9000, car=7000, pw=10).action is None
+    run(ctrl, 10, start=T0 + 11 * MIN, solar=0, pw=10, car=7000)
+    ctrl.command_sent(T0 + 21 * MIN, STOP)
+    d = ctrl.decide(T0 + 22 * MIN, snap(solar=0, pw=10, car=7000))
     assert d.action is None and "rate limited" in d.reason
-    assert run(ctrl, 13, start=T0 + 12 * MIN).action == START  # minute 25
+    assert ctrl.decide(T0 + 36 * MIN, snap(solar=0, pw=10, car=7000)).action == STOP
 
 
 def test_daily_command_cap_resets_next_day():
     ctrl = Controller(Settings(max_commands_per_day=1, min_command_interval=timedelta(0)))
-    run(ctrl, 10)
-    ctrl.command_sent(T0 + 10 * MIN)
-    assert "rate limited" in ctrl.decide(T0 + 11 * MIN, snap()).reason
+    run(ctrl, 10, solar=0, pw=10, car=7000)
+    ctrl.command_sent(T0 + 10 * MIN, STOP)
+    assert "rate limited" in ctrl.decide(T0 + 11 * MIN, snap(pw=10, car=7000)).reason
     tomorrow = T0 + timedelta(days=1)
-    assert run(ctrl, 10, start=tomorrow).action == START
-
-
-def test_learns_actual_charge_power():
-    ctrl = Controller(Settings(charge_power_w=7200))
-    run(ctrl, 60, solar=12000, car=10900)
-    assert 10000 < ctrl.charge_power_w <= 10900
+    assert run(ctrl, 10, start=tomorrow, pw=10, car=7000).action == STOP
