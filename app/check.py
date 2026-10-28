@@ -17,7 +17,9 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 def load_env(path: Path) -> None:
     """Read KEY=VALUE lines from .env into os.environ. Empty shell variables don't count as set."""
     if not path.exists():
-        sys.exit(f"No .env file found at {path}. Copy .env.example to .env and fill it in.")
+        # Inside Docker, docker compose passes the settings in as environment variables.
+        print(f"No .env file at {path}; using environment variables")
+        return
     print(f"Reading settings from {path}")
     for line in path.read_text().splitlines():
         line = line.strip()
